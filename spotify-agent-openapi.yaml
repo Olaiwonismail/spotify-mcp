@@ -1,0 +1,1174 @@
+openapi: 3.0.3
+info:
+  title: Spotify Personal AI Agent Web API Subset
+  version: 2026.02.1
+  description: |
+    Curated OpenAPI 3.0.3 specification derived from the official Spotify Web API schema
+    (https://developer.spotify.com/reference/web-api/open-api-schema.yaml).
+
+    ### Mandatory Implementation Rules
+    1. **Authorization (PKCE Required):**
+       - Use OAuth 2.0 Authorization Code with PKCE (`code_challenge_method=S256`) for user data, or standard Authorization Code flow only on a secure backend.
+       - Never use the deprecated Implicit Grant flow or expose a `client_secret` in client-side code.
+       - Automatically refresh expired tokens (`POST https://accounts.spotify.com/api/token` with `grant_type=refresh_token`). Re-trigger full authorization when a refresh token expires or is revoked.
+    2. **Redirect URIs:**
+       - Must use `https://` in production.
+       - For local loopback development, strictly use `http://127.0.0.1:{port}/callback` (never `http://localhost` or wildcard URIs).
+    3. **Rate Limiting (HTTP 429):**
+       - Respect the `Retry-After` response header (in seconds) and implement exponential backoff with jitter. Never retry immediately or in tight loops.
+    4. **Developer Terms Compliance:**
+       - Do not cache Spotify data beyond immediate operational use.
+       - Always attribute content to Spotify and link back to Spotify URIs/URLs.
+       - Never use Spotify API responses to train machine learning or AI models.
+  termsOfService: https://developer.spotify.com/terms
+
+servers:
+  - url: https://api.spotify.com/v1
+    description: Spotify Web API v1 Production Server
+
+security:
+  - oauth_2_0: []
+
+tags:
+  - name: Taste & History
+    description: User listening history, top artists/tracks, and saved library items.
+  - name: Discovery & Search
+    description: Catalog search and artist release lookups.
+  - name: Playlists
+    description: Creating, inspecting, and adding items to playlists.
+  - name: Player
+    description: Live playback inspection, starting playback, and queueing tracks.
+
+paths:
+  # ==========================================
+  # 1. TASTE & HISTORY
+  # ==========================================
+  /me/player/recently-played:
+    get:
+      tags: [Taste & History]
+      operationId: get-recently-played
+      summary: Get Current User's Recently Played Tracks
+      description: Get tracks from the current user's recently played tracks (up to 50 items).
+      security:
+        - oauth_2_0: [user-read-recently-played]
+      parameters:
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: after
+          in: query
+          description: A Unix timestamp in milliseconds. Returns all items after this cursor position (mutually exclusive with `before`).
+          schema:
+            type: integer
+            format: int64
+        - name: before
+          in: query
+          description: A Unix timestamp in milliseconds. Returns all items before this cursor position (mutually exclusive with `after`).
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: A paged set of recently played tracks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CursorPagingPlayHistoryObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /me/top/{type}:
+    get:
+      tags: [Taste & History]
+      operationId: get-users-top-artists-and-tracks
+      summary: Get User's Top Items (Tracks or Artists)
+      description: Get the current user's top artists or tracks based on calculated affinity.
+      security:
+        - oauth_2_0: [user-top-read]
+      parameters:
+        - name: type
+          in: path
+          required: true
+          description: The type of entity to return (`artists` or `tracks`).
+          schema:
+            type: string
+            enum: [artists, tracks]
+        - name: time_range
+          in: query
+          description: |
+            Over what time frame the affinities are computed:
+            - `short_term` (approx. last 4 weeks)
+            - `medium_term` (approx. last 6 months, default)
+            - `long_term` (calculated from several years of data)
+          schema:
+            type: string
+            enum: [short_term, medium_term, long_term]
+            default: medium_term
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          description: The index of the first item to return. Default 0.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Pages of top artists or tracks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagingArtistOrTrackObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /me/tracks:
+    get:
+      tags: [Taste & History]
+      operationId: get-users-saved-tracks
+      summary: Get User's Saved Tracks (Liked Songs)
+      description: Get a list of the songs saved in the current Spotify user's 'Your Music' library.
+      security:
+        - oauth_2_0: [user-library-read]
+      parameters:
+        - $ref: '#/components/parameters/MarketParam'
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          description: The index of the first item to return. Default 0.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Pages of saved tracks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagingSavedTrackObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /me/library:
+    put:
+      tags: [Taste & History]
+      operationId: save-library-items
+      summary: Save Items to Library
+      description: |
+        Add one or more items to the current user's library using Spotify URIs
+        (replaces deprecated `PUT /me/tracks`, `PUT /me/albums`, `PUT /me/following`, etc.).
+      security:
+        - oauth_2_0: [user-library-modify]
+      parameters:
+        - name: uris
+          in: query
+          required: true
+          description: Comma-separated list of Spotify URIs (e.g., `spotify:track:4iV5W9uYEdYUVa79Axb7Rh`).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Items saved to library
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      tags: [Taste & History]
+      operationId: remove-library-items
+      summary: Remove Items from Library
+      description: |
+        Remove one or more items from the current user's library using Spotify URIs
+        (replaces deprecated `DELETE /me/tracks`, `DELETE /me/albums`, etc.).
+      security:
+        - oauth_2_0: [user-library-modify]
+      parameters:
+        - name: uris
+          in: query
+          required: true
+          description: Comma-separated list of Spotify URIs to remove.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Items removed from library
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /me/library/contains:
+    get:
+      tags: [Taste & History]
+      operationId: check-library-contains
+      summary: Check User's Saved Items
+      description: |
+        Check if one or more items (by Spotify URI) are already saved in the current user's library
+        (replaces deprecated `GET /me/tracks/contains`).
+      security:
+        - oauth_2_0: [user-library-read]
+      parameters:
+        - name: uris
+          in: query
+          required: true
+          description: Comma-separated list of Spotify URIs to check (e.g., `spotify:track:4iV5W9uYEdYUVa79Axb7Rh`).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Array of booleans corresponding to the requested URIs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ==========================================
+  # 2. DISCOVERY & SEARCH
+  # ==========================================
+  /search:
+    get:
+      tags: [Discovery & Search]
+      operationId: search
+      summary: Search for Item
+      description: |
+        Get Spotify catalog information about albums, artists, playlists, tracks, shows, episodes or audiobooks that match a keyword string.
+        Note: Maximum `limit` is 10 and default is 5 per the February 2026 API update.
+      security:
+        - oauth_2_0: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query keywords and optional field filters (e.g., `track:Doxy artist:Miles Davis year:1954`).
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: Comma-separated list of item types to search across (`album`, `artist`, `playlist`, `track`, `show`, `episode`, `audiobook`).
+          schema:
+            type: string
+        - $ref: '#/components/parameters/MarketParam'
+        - name: limit
+          in: query
+          description: Maximum number of results to return in each item type. Default 5, max 10.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 5
+        - name: offset
+          in: query
+          description: The index of the first result to return. Default 0, max 1000.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+      responses:
+        '200':
+          description: Search response containing paged tracks, artists, or albums
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /artists/{id}/albums:
+    get:
+      tags: [Discovery & Search]
+      operationId: get-an-artists-albums
+      summary: Get Artist's Albums
+      description: Get Spotify catalog information about an artist's albums and singles (used to discover new releases from favorite artists).
+      security:
+        - oauth_2_0: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The Spotify ID of the artist.
+          schema:
+            type: string
+        - name: include_groups
+          in: query
+          description: Comma-separated list of keywords to filter album types (`album`, `single`, `appears_on`, `compilation`).
+          schema:
+            type: string
+        - $ref: '#/components/parameters/MarketParam'
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          description: The index of the first item to return. Default 0.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Pages of artist albums
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagingSimplifiedAlbumObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /albums/{id}/tracks:
+    get:
+      tags: [Discovery & Search]
+      operationId: get-an-albums-tracks
+      summary: Get Album Tracks
+      description: Get Spotify catalog information about an album's tracks to extract playable Track URIs from an artist's new releases.
+      security:
+        - oauth_2_0: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The Spotify ID of the album.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/MarketParam'
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          description: The index of the first item to return. Default 0.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Pages of simplified tracks on the album
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagingSimplifiedTrackObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ==========================================
+  # 3. PLAYLISTS
+  # ==========================================
+  /me/playlists:
+    get:
+      tags: [Playlists]
+      operationId: get-a-list-of-current-users-playlists
+      summary: Get Current User's Playlists
+      description: Get a list of the playlists owned or followed by the current Spotify user.
+      security:
+        - oauth_2_0: [playlist-read-private]
+      parameters:
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          description: The index of the first playlist to return. Default 0.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: A paged set of playlists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagingPlaylistObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    post:
+      tags: [Playlists]
+      operationId: create-playlist
+      summary: Create Playlist
+      description: |
+        Create a playlist for the current Spotify user (replaces deprecated `POST /users/{user_id}/playlists`).
+        The playlist will be empty until you add items via `POST /playlists/{playlist_id}/items`.
+      security:
+        - oauth_2_0: [playlist-modify-public, playlist-modify-private]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: The name for the new playlist.
+                  example: "High Energy Run"
+                public:
+                  type: boolean
+                  default: true
+                  description: If `true` the playlist will be public; if `false` it will be private.
+                collaborative:
+                  type: boolean
+                  default: false
+                  description: If `true` the playlist will be collaborative (requires `public: false`).
+                description:
+                  type: string
+                  description: Value for playlist description as displayed in Spotify Clients.
+      responses:
+        '201':
+          description: The newly created playlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /playlists/{playlist_id}/items:
+    get:
+      tags: [Playlists]
+      operationId: get-playlists-items
+      summary: Get Playlist Items
+      description: |
+        Get full details of the items of a playlist owned or collaborated on by the current Spotify user.
+        Replaces deprecated `GET /playlists/{playlist_id}/tracks`.
+      security:
+        - oauth_2_0: [playlist-read-private]
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          description: The Spotify ID of the playlist.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/MarketParam'
+        - name: fields
+          in: query
+          description: Comma-separated filter of fields to return (e.g., `total,limit,items(added_at,item(name,uri,artists(name)))`).
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: The maximum number of items to return. Default 20, max 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          description: The index of the first item to return. Default 0.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: additional_types
+          in: query
+          description: Comma-separated list of item types supported (`track`, `episode`).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pages of items in the playlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagingPlaylistItemObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    post:
+      tags: [Playlists]
+      operationId: add-items-to-playlist
+      summary: Add Items to Playlist
+      description: |
+        Add one or more items (up to 100 per request) to a user's playlist.
+        Replaces deprecated `POST /playlists/{playlist_id}/tracks`.
+      security:
+        - oauth_2_0: [playlist-modify-public, playlist-modify-private]
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          description: The Spotify ID of the playlist.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uris]
+              properties:
+                uris:
+                  type: array
+                  maxItems: 100
+                  description: Array of Spotify track or episode URIs to add.
+                  items:
+                    type: string
+                    example: "spotify:track:4iV5W9uYEdYUVa79Axb7Rh"
+                position:
+                  type: integer
+                  minimum: 0
+                  description: Zero-based index position to insert items. If omitted, appends to the end.
+      responses:
+        '201':
+          description: A snapshot ID for the playlist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot_id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ==========================================
+  # 4. IMMEDIATE PLAYBACK
+  # ==========================================
+  /me/player/currently-playing:
+    get:
+      tags: [Player]
+      operationId: get-the-users-currently-playing-track
+      summary: Get Currently Playing Track
+      description: Get the object currently being played on the user's Spotify account.
+      security:
+        - oauth_2_0: [user-read-currently-playing]
+      parameters:
+        - $ref: '#/components/parameters/MarketParam'
+        - name: additional_types
+          in: query
+          description: Comma-separated list of item types (`track`, `episode`).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Information about the currently playing track
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentlyPlayingContextObject'
+        '204':
+          description: Nothing is currently playing
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /me/player/play:
+    put:
+      tags: [Player]
+      operationId: start-a-users-playback
+      summary: Start/Resume Playback
+      description: Start a new context or resume current playback on the user's active device (requires Spotify Premium).
+      security:
+        - oauth_2_0: [user-modify-playback-state]
+      parameters:
+        - name: device_id
+          in: query
+          description: The ID of the device this command is targeting. If omitted, targets the user's currently active device.
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                context_uri:
+                  type: string
+                  description: Spotify URI of the context to play (album, artist, or playlist URI). Cannot be used with `uris`.
+                  example: "spotify:playlist:3cEYpjA9oz9GiPac4AsH4n"
+                uris:
+                  type: array
+                  description: Array of Spotify track URIs to play. Cannot be used with `context_uri`.
+                  items:
+                    type: string
+                    example: "spotify:track:4iV5W9uYEdYUVa79Axb7Rh"
+                offset:
+                  type: object
+                  description: Indicates from where in the context playback should start (`position` integer or `uri` string).
+                position_ms:
+                  type: integer
+                  minimum: 0
+                  description: Position in milliseconds to seek to.
+      responses:
+        '204':
+          description: Playback started
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /me/player/queue:
+    post:
+      tags: [Player]
+      operationId: add-to-queue
+      summary: Add an Item to Playback Queue
+      description: Add an item to the end of the user's current playback queue (requires Spotify Premium).
+      security:
+        - oauth_2_0: [user-modify-playback-state]
+      parameters:
+        - name: uri
+          in: query
+          required: true
+          description: The URI of the item to add to the queue (`spotify:track:...` or `spotify:episode:...`).
+          schema:
+            type: string
+        - name: device_id
+          in: query
+          description: The ID of the device this command is targeting. If omitted, targets the active device.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Item added to queue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+components:
+  securitySchemes:
+    oauth_2_0:
+      type: oauth2
+      description: |
+        Spotify OAuth 2.0 Authentication. Use Authorization Code with PKCE (`S256`) for client/local apps or Authorization Code on a confidential backend.
+        Redirect URIs must use `https://` or `http://127.0.0.1:{port}` (never `http://localhost`).
+      flows:
+        authorizationCode:
+          authorizationUrl: https://accounts.spotify.com/authorize
+          tokenUrl: https://accounts.spotify.com/api/token
+          refreshUrl: https://accounts.spotify.com/api/token
+          scopes:
+            user-read-recently-played: Access your recently played items.
+            user-top-read: Read your top artists and content.
+            user-library-read: Access your saved content.
+            user-library-modify: Manage your saved content.
+            playlist-read-private: Access your private playlists.
+            playlist-modify-public: Manage your public playlists.
+            playlist-modify-private: Manage your private playlists.
+            user-read-currently-playing: Read your currently playing content.
+            user-modify-playback-state: Control playback on your Spotify clients and Spotify Connect devices.
+
+  parameters:
+    MarketParam:
+      name: market
+      in: query
+      description: An ISO 3166-1 alpha-2 country code. If a valid user access token is used, the user's account country takes priority.
+      schema:
+        type: string
+        example: "US"
+
+  responses:
+    BadRequest:
+      description: Bad Request - The request could not be understood by the server due to malformed syntax or invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Bad or expired token. Refresh the access token using the refresh_token or re-authenticate the user via PKCE.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Bad OAuth request (insufficient scope, non-Premium user for player write commands, or non-owned playlist). Re-authenticating won't help without changing scope/account status.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: The requested resource or active playback device could not be found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: The app has exceeded its rate limits. Wait for the duration specified in `Retry-After` and apply exponential backoff.
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before making another request.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [status, message]
+          properties:
+            status:
+              type: integer
+              description: The HTTP status code (also returned in the response header).
+            message:
+              type: string
+              description: A short description of the cause of the error to surface to the user.
+
+    ExternalUrlObject:
+      type: object
+      properties:
+        spotify:
+          type: string
+          description: The Spotify URL for the object (must be used for attribution).
+
+    ImageObject:
+      type: object
+      required: [url, height, width]
+      properties:
+        url:
+          type: string
+        height:
+          type: integer
+          nullable: true
+        width:
+          type: integer
+          nullable: true
+
+    SimplifiedArtistObject:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [artist]
+        uri:
+          type: string
+        href:
+          type: string
+        external_urls:
+          $ref: '#/components/schemas/ExternalUrlObject'
+
+    ArtistObject:
+      allOf:
+        - $ref: '#/components/schemas/SimplifiedArtistObject'
+        - type: object
+          properties:
+            genres:
+              type: array
+              items:
+                type: string
+            images:
+              type: array
+              items:
+                $ref: '#/components/schemas/ImageObject'
+
+    SimplifiedAlbumObject:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        album_type:
+          type: string
+          enum: [album, single, compilation]
+        total_tracks:
+          type: integer
+        release_date:
+          type: string
+        release_date_precision:
+          type: string
+          enum: [year, month, day]
+        uri:
+          type: string
+        href:
+          type: string
+        external_urls:
+          $ref: '#/components/schemas/ExternalUrlObject'
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageObject'
+        artists:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimplifiedArtistObject'
+
+    SimplifiedTrackObject:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [track]
+        uri:
+          type: string
+        href:
+          type: string
+        duration_ms:
+          type: integer
+        explicit:
+          type: boolean
+        track_number:
+          type: integer
+        disc_number:
+          type: integer
+        is_local:
+          type: boolean
+        external_urls:
+          $ref: '#/components/schemas/ExternalUrlObject'
+        artists:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimplifiedArtistObject'
+
+    TrackObject:
+      allOf:
+        - $ref: '#/components/schemas/SimplifiedTrackObject'
+        - type: object
+          properties:
+            album:
+              $ref: '#/components/schemas/SimplifiedAlbumObject'
+            external_ids:
+              type: object
+              properties:
+                isrc:
+                  type: string
+                ean:
+                  type: string
+                upc:
+                  type: string
+
+    PlayHistoryObject:
+      type: object
+      properties:
+        track:
+          $ref: '#/components/schemas/TrackObject'
+        played_at:
+          type: string
+          format: date-time
+
+    SavedTrackObject:
+      type: object
+      properties:
+        added_at:
+          type: string
+          format: date-time
+        track:
+          $ref: '#/components/schemas/TrackObject'
+
+    PlaylistItemObject:
+      type: object
+      description: Represents an item in a playlist (post-February 2026 schema uses `item` for the nested track/episode).
+      properties:
+        added_at:
+          type: string
+          format: date-time
+          nullable: true
+        added_by:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            uri:
+              type: string
+            external_urls:
+              $ref: '#/components/schemas/ExternalUrlObject'
+        is_local:
+          type: boolean
+        item:
+          $ref: '#/components/schemas/TrackObject'
+
+    PlaylistObject:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        public:
+          type: boolean
+          nullable: true
+        collaborative:
+          type: boolean
+        snapshot_id:
+          type: string
+        uri:
+          type: string
+        href:
+          type: string
+        external_urls:
+          $ref: '#/components/schemas/ExternalUrlObject'
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageObject'
+        items:
+          $ref: '#/components/schemas/PagingPlaylistItemObject'
+
+    CurrentlyPlayingContextObject:
+      type: object
+      properties:
+        timestamp:
+          type: integer
+          format: int64
+        progress_ms:
+          type: integer
+          nullable: true
+        is_playing:
+          type: boolean
+        currently_playing_type:
+          type: string
+          enum: [track, episode, ad, unknown]
+        item:
+          $ref: '#/components/schemas/TrackObject'
+
+    PagingObject:
+      type: object
+      required: [href, limit, next, offset, previous, total]
+      properties:
+        href:
+          type: string
+        limit:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        offset:
+          type: integer
+        previous:
+          type: string
+          nullable: true
+        total:
+          type: integer
+
+    CursorPagingPlayHistoryObject:
+      type: object
+      properties:
+        href:
+          type: string
+        limit:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        cursors:
+          type: object
+          properties:
+            after:
+              type: string
+            before:
+              type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayHistoryObject'
+
+    PagingArtistOrTrackObject:
+      allOf:
+        - $ref: '#/components/schemas/PagingObject'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                oneOf:
+                  - $ref: '#/components/schemas/ArtistObject'
+                  - $ref: '#/components/schemas/TrackObject'
+
+    PagingSavedTrackObject:
+      allOf:
+        - $ref: '#/components/schemas/PagingObject'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SavedTrackObject'
+
+    PagingSimplifiedAlbumObject:
+      allOf:
+        - $ref: '#/components/schemas/PagingObject'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SimplifiedAlbumObject'
+
+    PagingSimplifiedTrackObject:
+      allOf:
+        - $ref: '#/components/schemas/PagingObject'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SimplifiedTrackObject'
+
+    PagingPlaylistObject:
+      allOf:
+        - $ref: '#/components/schemas/PagingObject'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistObject'
+
+    PagingPlaylistItemObject:
+      allOf:
+        - $ref: '#/components/schemas/PagingObject'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistItemObject'
+
+    SearchItemsResponse:
+      type: object
+      properties:
+        tracks:
+          allOf:
+            - $ref: '#/components/schemas/PagingObject'
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TrackObject'
+        artists:
+          allOf:
+            - $ref: '#/components/schemas/PagingObject'
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ArtistObject'
+        albums:
+          $ref: '#/components/schemas/PagingSimplifiedAlbumObject'

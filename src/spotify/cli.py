@@ -10,3 +10,11 @@ app.add_typer(auth_app, name="auth")
 def login():
     auth.login()
 
+@app.command()
+def init():
+    setup.run()
+
+@app.command()
+def serve():
+    from .spotify import mcp
+    mcp.run(transport="stdio")

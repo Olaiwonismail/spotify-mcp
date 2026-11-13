@@ -9,6 +9,14 @@ import signal
 import uvicorn
 from fastapi import FastAPI
 
+import json
+from pathlib import Path
+
+TOKEN_FILE = Path.home() / ".config" / "spotify" / "token.json"
+
+def is_signed_in():
+    return TOKEN_FILE.exists()
+
 def login():
     code_verifier = secrets.token_hex(32)
     text_bytes = code_verifier.encode('utf-8')
@@ -54,14 +62,16 @@ def login():
 
         async with httpx2.AsyncClient(http2=True) as client:
             response = await client.post(url, data=payload)
-            response_data = response.json()['access_token']
-            codes['access_token'] = response_data
-
-        os.kill(os.getpid(), signal.SIGINT)
+            data = response.json()
+            TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            TOKEN_FILE.write_text(json.dumps(data))
+            codes['access_token'] = data['access_token']
+        server.should_exit = True
         
         return {"message": "Login successful. You can close this tab."}
 
     webbrowser.open_new(auth_url)
-    uvicorn.run(app, host="127.0.0.1", port=8080)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=8080))
+    server.run()
 
     return codes['access_token']
