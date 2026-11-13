@@ -65,6 +65,7 @@ class InsufficientScopes(RuntimeError):
 
 
 _refresh_lock = asyncio.Lock()
+_transient_state: AuthState | None = None
 
 
 def _read_token() -> dict[str, Any] | None:
@@ -106,6 +107,8 @@ def _expires_at(token: dict[str, Any]) -> float | None:
 
 def get_auth_status(required_scopes: Iterable[str] = ()) -> dict[str, Any]:
     """Return a safe, non-secret snapshot of the authentication state."""
+    if _transient_state in {AuthState.AUTHORIZING, AuthState.REFRESHING}:
+        return {"state": _transient_state.value}
     try:
         token = _read_token()
     except AuthenticationRequired as exc:
@@ -148,8 +151,13 @@ def _write_token(token: dict[str, Any]) -> None:
     temp_file.replace(TOKEN_FILE)
 
 
-async def refresh_access_token(required_scopes: Iterable[str] = ()) -> str:
+async def refresh_access_token(
+    required_scopes: Iterable[str] = (),
+    *,
+    failed_access_token: str | None = None,
+) -> str:
     """Refresh the access token and return it, retaining an omitted refresh token."""
+    global _transient_state
     async with _refresh_lock:
         token = _read_token()
         if token is None:
@@ -159,21 +167,35 @@ async def refresh_access_token(required_scopes: Iterable[str] = ()) -> str:
         if missing:
             raise InsufficientScopes(missing)
 
+        # A concurrent request may already have refreshed the token after this
+        # request received a 401. Reuse that token instead of rotating again.
+        if failed_access_token and token.get("access_token") != failed_access_token:
+            return token["access_token"]
+
+        expiry = _expires_at(token)
+        if failed_access_token is None and expiry is not None and expiry > time.time() + 30:
+            return token["access_token"]
+
         refresh_token = token.get("refresh_token")
         if not refresh_token:
             raise AuthenticationRequired(
                 "The Spotify token cannot be refreshed. Run: spotify auth login"
             )
 
-        async with httpx2.AsyncClient(http2=True, timeout=30.0) as client:
-            response = await client.post(
-                TOKEN_URL,
-                data={
-                    "client_id": CLIENT_ID,
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                },
-            )
+        previous_state = _transient_state
+        _transient_state = AuthState.REFRESHING
+        try:
+            async with httpx2.AsyncClient(http2=True, timeout=30.0) as client:
+                response = await client.post(
+                    TOKEN_URL,
+                    data={
+                        "client_id": CLIENT_ID,
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    },
+                )
+        finally:
+            _transient_state = previous_state
 
         if response.status_code >= 400:
             try:
@@ -208,6 +230,12 @@ async def get_access_token(required_scopes: Iterable[str] = ()) -> str:
         raise InsufficientScopes(missing)
 
     state = get_auth_status(required_scopes).get("state")
+    if state == AuthState.REFRESHING.value:
+        # Another concurrent MCP request is already refreshing. Wait for its
+        # atomic token-file update, then use the refreshed token.
+        async with _refresh_lock:
+            pass
+        return await get_access_token(required_scopes)
     if state == AuthState.NEEDS_LOGIN.value:
         raise AuthenticationRequired(
             "The Spotify token expired and cannot be refreshed. Run: spotify auth login"
@@ -217,12 +245,8 @@ async def get_access_token(required_scopes: Iterable[str] = ()) -> str:
     return token["access_token"]
 
 
-async def login_async() -> str:
-    """Run the PKCE login callback server without blocking an async event loop."""
-    raise NotImplementedError("Use the synchronous login() command-line flow")
-
-
 def login() -> str:
+    global _transient_state
     code_verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(
         hashlib.sha256(code_verifier.encode("utf-8")).digest()
@@ -281,9 +305,16 @@ def login() -> str:
         server.should_exit = True
         return {"message": "Login successful. You can close this tab."}
 
-    webbrowser.open_new(AUTH_URL + "?" + urllib.parse.urlencode(params))
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=8080, log_level="warning"))
-    server.run()
+    previous_state = _transient_state
+    _transient_state = AuthState.AUTHORIZING
+    try:
+        webbrowser.open_new(AUTH_URL + "?" + urllib.parse.urlencode(params))
+        server = uvicorn.Server(
+            uvicorn.Config(app, host="127.0.0.1", port=8080, log_level="warning")
+        )
+        server.run()
+    finally:
+        _transient_state = previous_state
 
     if not result["access_token"]:
         raise RuntimeError("Spotify login did not complete. Try: spotify auth login")

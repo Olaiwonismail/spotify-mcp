@@ -70,7 +70,9 @@ async def spotify_request(
             )
 
             if response.status_code == 401 and not refreshed_after_401:
-                access_token = await auth.refresh_access_token(required)
+                access_token = await auth.refresh_access_token(
+                    required, failed_access_token=access_token
+                )
                 refreshed_after_401 = True
                 continue
 
@@ -83,9 +85,8 @@ async def spotify_request(
                         retry_after,
                     )
 
-                backoff = retry_after
-                if backoff is None:
-                    backoff = min(2.0**retry_number, MAX_INLINE_RETRY_AFTER)
+                exponential_delay = 2.0**retry_number
+                backoff = max(retry_after or 0.0, exponential_delay)
                 # Avoid holding a tool call open for a long Retry-After. In that case,
                 # surface the exact delay instead of retrying before Spotify permits it.
                 if backoff > MAX_INLINE_RETRY_AFTER:
