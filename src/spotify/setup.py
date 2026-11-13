@@ -1,5 +1,10 @@
 # setup.py
-import json, os, shutil, subprocess, sys
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 import questionary
 from . import auth
@@ -94,15 +99,62 @@ def add_to_claude_code():
     return False
 
 
+def _probe_spotify():
+    """Refresh if needed and verify the token with Spotify before setup continues."""
+    from .api import spotify_request
+
+    status = auth.get_auth_status(auth.SCOPES)
+    if status.get("state") == auth.AuthState.REFRESHABLE.value:
+        asyncio.run(auth.get_access_token(auth.SCOPES))
+        status = auth.get_auth_status(auth.SCOPES)
+    if status.get("state") != auth.AuthState.READY.value:
+        return False, status.get("message") or status.get("state", "Unknown auth state")
+
+    asyncio.run(
+        spotify_request(
+            "GET",
+            "/me",
+            required_scopes={"user-read-private", "user-read-email"},
+        )
+    )
+    return True, "Spotify account is connected and ready."
+
+
+def ensure_spotify_auth():
+    try:
+        ready, message = _probe_spotify()
+    except Exception as exc:
+        ready, message = False, str(exc)
+
+    if ready:
+        print(message)
+        return True
+
+    print(f"Spotify authentication needs attention: {message}")
+    if not questionary.confirm(
+        "Sign in or reauthorize Spotify now?", default=True
+    ).ask():
+        print("Setup stopped. Run `spotify init` again when you're ready to sign in.")
+        return False
+
+    try:
+        auth.login()
+        ready, message = _probe_spotify()
+    except Exception as exc:
+        ready, message = False, str(exc)
+
+    if not ready:
+        print(f"Spotify setup could not be verified: {message}")
+        print("Run `spotify auth login` to try again, then run `spotify init`.")
+        return False
+
+    print(message)
+    return True
+
+
 def run():
-    if auth.is_signed_in():
-        print("Already signed in.")
-    elif questionary.confirm("Sign in now?").ask():
-        try:
-            auth.login()
-            print("Signed in.")
-        except RuntimeError as e:
-            print(f"Sign in failed: {e}")
+    if not ensure_spotify_auth():
+        return
 
     found = [n for n, a in AGENTS.items() if a["file"].parent.exists()]
     if shutil.which("claude"):

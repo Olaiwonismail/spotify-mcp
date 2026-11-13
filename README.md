@@ -8,16 +8,18 @@ The server uses Spotify Authorization Code with PKCE. The existing token locatio
 `~/.config/spotify/token.json`; `spotify auth login` writes to that location and both the
 CLI and MCP use the same path. Token values are never returned by tools.
 
+Run the initializer to check the token, refresh it if needed, prompt for login or new
+permissions when needed, verify the connection with Spotify, and configure a supported
+MCP client:
+
 ```powershell
-spotify auth login
-spotify auth status
-spotify serve
+uv run spotify init
 ```
 
-Login requests the scopes needed by the available tools. If Spotify reports missing
-permissions, run `spotify auth login` again and approve the requested access. Access
-tokens are refreshed automatically when possible. Playback control and queueing require
-a Spotify Premium account and an active Spotify device.
+Restart the selected MCP client when setup finishes. You can inspect the current auth
+state with `uv run spotify auth status`, or run `uv run spotify auth login` to sign in
+or grant scopes manually. Access tokens refresh automatically when possible. Playback
+control and queueing require a Spotify Premium account and an active Spotify device.
 
 ## MCP tools
 
