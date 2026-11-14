@@ -45,3 +45,39 @@ control and queueing require a Spotify Premium account and an active Spotify dev
 
 Paged tools accept `limit` and `offset` where applicable. Search results and playlist
 items include Spotify IDs or URIs for use by the playlist and playback tools.
+
+## Example: Japanese rock discovery
+
+You can ask your assistant for a mix that builds on your listening history while adding
+artists you have not heard before:
+
+> Find me Japanese rock. Make around 30% of the picks new-to-me artists, and don't limit
+> the recommendations to anime soundtracks. Save the results to a private playlist.
+
+An example result is **日本語ロック — 30% new blood**: 33 tracks in a private playlist,
+including 11 picks from new-to-you artists. The rest draw on familiar Japanese rock
+artists and deeper cuts. Representative new discoveries included:
+
+- SiM — “The Rumbling”
+- coldrain — “MAYDAY”
+- Crossfaith — “Monolith”
+- BAND-MAID — “DOMINATION”
+- Vaundy — “Kaiju no Hanauta”
+
+The assistant can use listening history and top-item tools to establish context, search
+for tracks that match the requested genre and vibe, then create a playlist and add the
+selected Spotify track URIs.
+
+## Example: research-informed study playlist
+
+The Spotify MCP can also build a playlist from recommendations the assistant develops
+after doing research:
+
+> Research whether listening to music while studying affects focus or test scores. Use
+> the evidence carefully, find recordings used in the studies plus suitable instrumental
+> tracks, and put them in a private playlist.
+
+In one example, the assistant created a private playlist with 35 tracks and an estimated
+runtime of about 2 hours 50 minutes. The assistant handled the research; the Spotify MCP
+provided the catalog search and playlist tools. Private playlist links are account-specific
+and should not be copied into public documentation.
