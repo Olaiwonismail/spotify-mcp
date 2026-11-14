@@ -75,7 +75,7 @@ def _read_token() -> dict[str, Any] | None:
         token = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise AuthenticationRequired(
-            "The saved Spotify token could not be read. Run: spotify auth login"
+            "The saved Spotify token could not be read. Run: spotify-mcp auth login"
         ) from exc
     if not isinstance(token, dict) or not token.get("access_token"):
         return None
@@ -116,7 +116,7 @@ def get_auth_status(required_scopes: Iterable[str] = ()) -> dict[str, Any]:
     if token is None:
         return {
             "state": AuthState.SIGNED_OUT.value,
-            "message": "Not signed in. Run: spotify auth login",
+            "message": "Not signed in. Run: spotify-mcp auth login",
         }
 
     missing = sorted(_missing_scopes(token, required_scopes))
@@ -124,7 +124,7 @@ def get_auth_status(required_scopes: Iterable[str] = ()) -> dict[str, Any]:
         return {
             "state": AuthState.NEEDS_SCOPES.value,
             "missing_scopes": missing,
-            "message": "Run: spotify auth login to grant the requested permissions.",
+            "message": "Run: spotify-mcp auth login to grant the requested permissions.",
         }
 
     expiry = _expires_at(token)
@@ -140,7 +140,7 @@ def get_auth_status(required_scopes: Iterable[str] = ()) -> dict[str, Any]:
     if expiry is not None:
         result["expires_at"] = int(expiry)
     if state == AuthState.NEEDS_LOGIN:
-        result["message"] = "The token expired and cannot be refreshed. Run: spotify auth login"
+        result["message"] = "The token expired and cannot be refreshed. Run: spotify-mcp auth login"
     return result
 
 
@@ -161,7 +161,7 @@ async def refresh_access_token(
     async with _refresh_lock:
         token = _read_token()
         if token is None:
-            raise AuthenticationRequired("Not signed in. Run: spotify auth login")
+            raise AuthenticationRequired("Not signed in. Run: spotify-mcp auth login")
 
         missing = _missing_scopes(token, required_scopes)
         if missing:
@@ -179,7 +179,7 @@ async def refresh_access_token(
         refresh_token = token.get("refresh_token")
         if not refresh_token:
             raise AuthenticationRequired(
-                "The Spotify token cannot be refreshed. Run: spotify auth login"
+                "The Spotify token cannot be refreshed. Run: spotify-mcp auth login"
             )
 
         previous_state = _transient_state
@@ -204,7 +204,7 @@ async def refresh_access_token(
                 message = response.text
             raise AuthenticationRequired(
                 f"Spotify token refresh failed ({response.status_code}): {message}. "
-                "Run: spotify auth login"
+                "Run: spotify-mcp auth login"
             )
 
         refreshed = response.json()
@@ -223,7 +223,7 @@ async def get_access_token(required_scopes: Iterable[str] = ()) -> str:
     """Return a usable token, refreshing first when expiry is known or unknown."""
     token = _read_token()
     if token is None:
-        raise AuthenticationRequired("Not signed in. Run: spotify auth login")
+        raise AuthenticationRequired("Not signed in. Run: spotify-mcp auth login")
 
     missing = _missing_scopes(token, required_scopes)
     if missing:
@@ -238,7 +238,7 @@ async def get_access_token(required_scopes: Iterable[str] = ()) -> str:
         return await get_access_token(required_scopes)
     if state == AuthState.NEEDS_LOGIN.value:
         raise AuthenticationRequired(
-            "The Spotify token expired and cannot be refreshed. Run: spotify auth login"
+            "The Spotify token expired and cannot be refreshed. Run: spotify-mcp auth login"
         )
     if state == AuthState.REFRESHABLE.value:
         return await refresh_access_token(required_scopes)
@@ -317,5 +317,5 @@ def login() -> str:
         _transient_state = previous_state
 
     if not result["access_token"]:
-        raise RuntimeError("Spotify login did not complete. Try: spotify auth login")
+        raise RuntimeError("Spotify login did not complete. Try: spotify-mcp auth login")
     return result["access_token"]

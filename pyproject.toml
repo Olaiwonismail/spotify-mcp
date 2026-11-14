@@ -1,7 +1,7 @@
 [project]
-name = "spotify"
+name = "spotify-vibe-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "A local MCP server for personalized Spotify discovery, playlists, and playback"
 readme = "README.md"
 authors = [
     { name = "olaiwonismail", email = "olaiwonismail@gmail.com" }
@@ -19,8 +19,11 @@ dependencies = [
 ]
 
 [project.scripts]
-spotify = "spotify.cli:app"
+spotify-mcp = "spotify.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.12.14,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "spotify"

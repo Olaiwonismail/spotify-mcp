@@ -16,8 +16,13 @@ def status():
     """Show login readiness without printing token values."""
     print(json.dumps(auth.get_auth_status(auth.SCOPES), indent=2))
 
-@app.command()
-def init():
+@app.command("connect")
+def connect():
+    setup.run()
+
+@app.command("setup")
+def setup_alias():
+    """Alias for connect: authenticate Spotify and register the MCP client."""
     setup.run()
 
 @app.command()

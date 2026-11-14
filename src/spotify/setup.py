@@ -9,14 +9,29 @@ from pathlib import Path
 import questionary
 from . import auth
 
-NAME = "spotify"  # your package name, must match pyproject.toml
+SERVER_NAME = "spotify"
+PACKAGE_NAME = "spotify-vibe-mcp"
+COMMAND_NAME = "spotify-mcp"
 
 HOME = Path.home()
 APPDATA = Path(os.environ.get("APPDATA", ""))
 UV = shutil.which("uv") or "uv"
-PROJECT = r"C:\Users\Windows\Desktop\MCP\spotify"
+PROJECT = Path(__file__).resolve().parents[2]
 
-SERVE = [UV, "--directory", PROJECT, "run", NAME, "serve"]
+# A checkout uses its own source tree; an installed release gets a portable
+# uv tool-run entry that resolves the published package on any machine.
+if (PROJECT / "pyproject.toml").is_file():
+    SERVE = [UV, "--directory", str(PROJECT), "run", COMMAND_NAME, "serve"]
+else:
+    SERVE = [
+        UV,
+        "tool",
+        "run",
+        "--from",
+        PACKAGE_NAME,
+        COMMAND_NAME,
+        "serve",
+    ]
 
 ENTRY = {"command": SERVE[0], "args": SERVE[1:]}
 
@@ -45,7 +60,7 @@ AGENTS = {
 
 def print_manual(name, key, entry, reason):
     print(f"{name}: {reason}. Add this under \"{key}\" yourself:")
-    print(json.dumps({NAME: entry}, indent=2))
+    print(json.dumps({SERVER_NAME: entry}, indent=2))
 
 
 def add_to_file(name, agent):
@@ -57,7 +72,7 @@ def add_to_file(name, agent):
     jsonc = f.with_suffix(".jsonc")
     if jsonc.exists():
         text = jsonc.read_text(encoding="utf-8-sig", errors="ignore")
-        if f'"{NAME}"' in text:
+        if f'"{SERVER_NAME}"' in text:
             print(f"{name}: already set up (found in {jsonc.name})")
             return False
 
@@ -67,7 +82,7 @@ def add_to_file(name, agent):
         print_manual(name, key, entry, f"could not read {f}")
         return False
 
-    current = cfg.get(key, {}).get(NAME)
+    current = cfg.get(key, {}).get(SERVER_NAME)
     if current == entry:
         print(f"{name}: already set up")
         return False
@@ -75,7 +90,7 @@ def add_to_file(name, agent):
     if not f.exists() and name == "OpenCode":
         cfg["$schema"] = "https://opencode.ai/config.json"
 
-    cfg.setdefault(key, {})[NAME] = entry
+    cfg.setdefault(key, {})[SERVER_NAME] = entry
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     print(f"{name}: {'updated' if current else 'added'}")
@@ -85,7 +100,7 @@ def add_to_file(name, agent):
 def add_to_claude_code():
     claude = shutil.which("claude")
     r = subprocess.run(
-        [claude, "mcp", "add", "--scope", "user", NAME, "--", *SERVE],
+        [claude, "mcp", "add", "--scope", "user", SERVER_NAME, "--", *SERVE],
         capture_output=True, text=True,
     )
     out = (r.stdout + r.stderr).strip()
@@ -134,7 +149,7 @@ def ensure_spotify_auth():
     if not questionary.confirm(
         "Sign in or reauthorize Spotify now?", default=True
     ).ask():
-        print("Setup stopped. Run `spotify init` again when you're ready to sign in.")
+        print("Setup stopped. Run `spotify-mcp connect` again when you're ready to sign in.")
         return False
 
     try:
@@ -145,7 +160,7 @@ def ensure_spotify_auth():
 
     if not ready:
         print(f"Spotify setup could not be verified: {message}")
-        print("Run `spotify auth login` to try again, then run `spotify init`.")
+        print("Run `spotify-mcp auth login` to try again, then run `spotify-mcp connect`.")
         return False
 
     print(message)

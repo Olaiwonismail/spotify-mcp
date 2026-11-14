@@ -1970,7 +1970,7 @@ wheels = [
 ]
 
 [[package]]
-name = "spotify"
+name = "spotify-vibe-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

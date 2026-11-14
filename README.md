@@ -1,25 +1,34 @@
-# Spotify MCP
+# Spotify Taste MCP
 
 A local MCP server for Spotify listening context, music discovery, playlists, and playback.
 
 ## Authentication
 
 The server uses Spotify Authorization Code with PKCE. The existing token location is
-`~/.config/spotify/token.json`; `spotify auth login` writes to that location and both the
+`~/.config/spotify/token.json`; `spotify-mcp auth login` writes to that location and both the
 CLI and MCP use the same path. Token values are never returned by tools.
 
-Run the initializer to check the token, refresh it if needed, prompt for login or new
-permissions when needed, verify the connection with Spotify, and configure a supported
-MCP client:
+After the package is published on PyPI, install it persistently with `uv` and run the
+connector. It checks the token, refreshes it if needed, prompts for login or new
+permissions, verifies the Spotify connection, and configures a supported MCP client:
 
 ```powershell
-uv run spotify init
+uv tool install spotify-vibe-mcp
+spotify-mcp connect
 ```
 
-Restart the selected MCP client when setup finishes. You can inspect the current auth
-state with `uv run spotify auth status`, or run `uv run spotify auth login` to sign in
-or grant scopes manually. Access tokens refresh automatically when possible. Playback
-control and queueing require a Spotify Premium account and an active Spotify device.
+For a one-time run without persistent installation:
+
+```powershell
+uvx --from spotify-vibe-mcp spotify-mcp connect
+```
+
+For development from a cloned checkout, run `uv sync` followed by
+`uv run spotify-mcp connect`; the generated MCP entry points back to that checkout.
+Restart the selected MCP client when setup finishes. You can inspect auth state with
+`spotify-mcp auth status`, or run `spotify-mcp auth login` to sign in or grant scopes
+manually. Access tokens refresh automatically when possible. Playback control and
+queueing require a Spotify Premium account and an active Spotify device.
 
 ## MCP tools
 
