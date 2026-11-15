@@ -10,19 +10,19 @@ import questionary
 from . import auth
 
 SERVER_NAME = "spotify"
-PACKAGE_NAME = "spotify-vibe-mcp"
-COMMAND_NAME = "spotify-mcp"
+PACKAGE_NAME = "spotify-music-mcp"
+COMMAND_NAME = "spotify-music-mcp"
 
 HOME = Path.home()
 APPDATA = Path(os.environ.get("APPDATA", ""))
-UV = shutil.which("uv") or "uv"
+UV = shutil.which("uv")
 PROJECT = Path(__file__).resolve().parents[2]
 
-# A checkout uses its own source tree; an installed release gets a portable
-# uv tool-run entry that resolves the published package on any machine.
-if (PROJECT / "pyproject.toml").is_file():
+# Prefer a stable uv package invocation for MCP clients. If uv is unavailable
+# (e.g. a pip-only install), use the Python environment running `connect`.
+if (PROJECT / "pyproject.toml").is_file() and UV:
     SERVE = [UV, "--directory", str(PROJECT), "run", COMMAND_NAME, "serve"]
-else:
+elif UV:
     SERVE = [
         UV,
         "tool",
@@ -32,6 +32,8 @@ else:
         COMMAND_NAME,
         "serve",
     ]
+else:
+    SERVE = [sys.executable, "-m", "spotify", "serve"]
 
 ENTRY = {"command": SERVE[0], "args": SERVE[1:]}
 
@@ -149,7 +151,7 @@ def ensure_spotify_auth():
     if not questionary.confirm(
         "Sign in or reauthorize Spotify now?", default=True
     ).ask():
-        print("Setup stopped. Run `spotify-mcp connect` again when you're ready to sign in.")
+        print("Setup stopped. Run `spotify-music-mcp connect` again when you're ready to sign in.")
         return False
 
     try:
@@ -160,7 +162,7 @@ def ensure_spotify_auth():
 
     if not ready:
         print(f"Spotify setup could not be verified: {message}")
-        print("Run `spotify-mcp auth login` to try again, then run `spotify-mcp connect`.")
+        print("Run `spotify-music-mcp auth login` to try again, then run `spotify-music-mcp connect`.")
         return False
 
     print(message)
