@@ -11,3 +11,5 @@ wheels/
 
 # Local Spotify OAuth credentials
 spotify_token.json
+
+.env
